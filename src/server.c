@@ -8,18 +8,31 @@
 #include <pthread.h>
 
 #include "utils/error_msg.h"
+#include "queue/queue.h"
 
 #define PORT 18000
 #define MAX_DATA 4096
-#define SOCKET_QUEUE 10
+#define SOCKET_QUEUE 50
+#define THREAD_POOL_SIZE 20
 
 void* handle_connection(void* arg);
+void* handle_connection_pool(void* arg);
+
+pthread_t thread_pool[THREAD_POOL_SIZE];
+pthread_mutex_t queue_mutex;
+
+Queue* connection_queue;
 
 int main() {
     int server_fd, connection_fd;
     struct sockaddr_in server_addr;
     char server_addr_string[MAX_DATA + 1];
     char connection_addr_string[MAX_DATA + 1];
+    connection_queue = init_queue();
+    
+    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+        pthread_create(&thread_pool[i], NULL, handle_connection_pool, NULL);
+    }
 
     // Create a IPv4 STREAM TCP Socket 
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -44,12 +57,10 @@ int main() {
     if (listen_status < 0) error_msg("Set socket to listen error");
 
     inet_ntop(AF_INET, &server_addr, server_addr_string, MAX_DATA);
-    printf("Listenning on %s\r\n\n", server_addr_string);
-    
+    printf("Listenning on %s\r\n\n", server_addr_string);    
     fflush(stdout);
 
     int i = 0;
-
     while (true) {
         // Accept the first connection on the queue (wait if don't have connection on the queue) 
         struct sockaddr_in connection_addr;
@@ -67,12 +78,15 @@ int main() {
 
         int* p_fd = (int*)malloc(sizeof(int));
         *p_fd = connection_fd;
-        pthread_t t;
-        pthread_create(&t, NULL, handle_connection, p_fd);
+        enqueue(connection_queue, (void*)p_fd);
+        // pthread_t t;
+        // pthread_create(&t, NULL, handle_connection, p_fd);
         // handle_connection(p_fd);
+        
     }
 
     close(server_fd);
+    destroy_queue(connection_queue);
 }
 
 void* handle_connection(void* arg) {
@@ -120,16 +134,30 @@ void* handle_connection(void* arg) {
     }
 
     while ((bytes_read = fread(send_buff, sizeof(char), MAX_DATA, file)) > 0) {
-        // printf("Sending: %s\n\r", (char*)send_buff);
+        printf("Sending: %s\n\r", (char*)send_buff);
         write(fd, send_buff, bytes_read);
     }
 
     // Simuling server processing  
-    // usleep(100 * 1000);
-    sleep(10);
+    usleep(100 * 1000);
+    // sleep(10);
     
     close(fd);
     fclose(file);
     printf("Closing connection\n\r\n\r");
+    return NULL;
+}
+
+void* handle_connection_pool(void* arg) {
+    (void)arg;
+    void* val;
+
+    while (true) {
+        pthread_mutex_lock(&queue_mutex);
+        val = dequeue(connection_queue);
+        pthread_mutex_unlock(&queue_mutex);
+        if (val != NULL) handle_connection(val);
+    }
+
     return NULL;
 }

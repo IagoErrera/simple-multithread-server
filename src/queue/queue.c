@@ -21,14 +21,14 @@ void* dequeue(Queue* q) {
     if (q->head->next == NULL) q->tail = NULL;
     q->head = q->head->next;
 
-    free(node);
-
     return val;
 }
 
 void destroy_queue(Queue* q) {
     while (q->head != NULL)
         dequeue(q);
+
+    free(q);
 }
 
 Queue* init_queue() {

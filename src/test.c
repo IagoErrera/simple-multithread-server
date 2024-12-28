@@ -12,7 +12,12 @@ int main() {
     printf("Test: %d\n\r", *pt);
     fflush(stdout);
 
-    free(q);
+    void* a = dequeue(q);
+    a = dequeue(q);
+    a = dequeue(q);
+    a = dequeue(q);
 
+    destroy_queue(q);
+    
     return 0;
 }
