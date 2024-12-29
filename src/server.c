@@ -19,7 +19,8 @@ void* handle_connection(void* arg);
 void* handle_connection_pool(void* arg);
 
 pthread_t thread_pool[THREAD_POOL_SIZE];
-pthread_mutex_t queue_mutex;
+pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
 
 Queue* connection_queue;
 
@@ -78,10 +79,10 @@ int main() {
 
         int* p_fd = (int*)malloc(sizeof(int));
         *p_fd = connection_fd;
+        pthread_mutex_lock(&queue_mutex);
         enqueue(connection_queue, (void*)p_fd);
-        // pthread_t t;
-        // pthread_create(&t, NULL, handle_connection, p_fd);
-        // handle_connection(p_fd);
+        pthread_cond_signal(&queue_cond);
+        pthread_mutex_unlock(&queue_mutex);
         
     }
 
@@ -154,8 +155,12 @@ void* handle_connection_pool(void* arg) {
 
     while (true) {
         pthread_mutex_lock(&queue_mutex);
-        val = dequeue(connection_queue);
+        if ((val = dequeue(connection_queue)) == NULL) {
+            pthread_cond_wait(&queue_cond, &queue_mutex);
+            val = dequeue(connection_queue);
+        }
         pthread_mutex_unlock(&queue_mutex);
+
         if (val != NULL) handle_connection(val);
     }
 
